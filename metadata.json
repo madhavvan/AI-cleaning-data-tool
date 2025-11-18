@@ -1,0 +1,5 @@
+{
+  "name": "AutoCleanse AI",
+  "description": "The ultimate automatic data cleaning suite. Drop your messy CSVs and let Gemini 2.5 AI analyze, scrub, standardise, and repair your data instantly—no formulas required.",
+  "requestFramePermissions": []
+}
