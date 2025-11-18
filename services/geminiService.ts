@@ -1,8 +1,15 @@
 import { GoogleGenAI, Type } from "@google/genai";
-import { DatasetAnalysis, DataRow, CleaningAction, ValidationError } from '../types';
+import { DatasetAnalysis, DataRow, CleaningAction, ValidationError, ChatMessage, EvolutionProposal, AgentLog } from '../types';
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
 const MODEL_NAME = 'gemini-2.5-flash';
+const CHAT_MODEL_NAME = 'gemini-3-pro-preview';
+
+const cleanJson = (text: string | undefined): string => {
+    if (!text) return '{}';
+    // Remove markdown code blocks if present
+    return text.replace(/```json\s*|\s*```/g, '').trim();
+};
 
 // --- AGENT: STRATEGIST ---
 export const analyzeDatasetWithGemini = async (
@@ -76,7 +83,7 @@ export const analyzeDatasetWithGemini = async (
       }
     });
 
-    const result = JSON.parse(response.text || '{}');
+    const result = JSON.parse(cleanJson(response.text));
     const actions = result.recommendedActions?.map((a: any) => ({
         ...a,
         status: 'pending'
@@ -89,11 +96,93 @@ export const analyzeDatasetWithGemini = async (
   }
 };
 
-// --- AGENT: EXECUTIONER (Targeted) ---
+// --- AGENT: EXECUTIONER (Optimized) ---
 export const cleanDataBatch = async (
   data: DataRow[], 
   action: CleaningAction
 ): Promise<DataRow[]> => {
+    
+    if (action.type === 'remove_duplicates') {
+        console.log("Optimized Execution: Removing duplicates locally.");
+        const seen = new Set<string>();
+        return data.filter(row => {
+            const signature = JSON.stringify(
+                Object.entries(row)
+                    .filter(([key]) => key !== 'id' && key !== '_flags')
+                    .sort((a, b) => a[0].localeCompare(b[0]))
+            );
+            if (seen.has(signature)) return false;
+            seen.add(signature);
+            return true;
+        });
+    }
+
+    if (action.type === 'remove_outliers') {
+         const dataSnippet = JSON.stringify(data);
+         const prompt = `
+            ROLE: OUTLIER EXECUTIONER.
+            TASK: Identify rows that contain statistical outliers in column: ${action.columnTarget || 'ANY'}.
+            RETURN: A simple JSON array of "id" strings for the rows that must be DELETED.
+            
+            Example Output: ["row-1", "row-55"]
+
+            DATA:
+            ${dataSnippet}
+         `;
+         
+         try {
+            const response = await ai.models.generateContent({
+                model: MODEL_NAME,
+                contents: prompt,
+                config: { responseMimeType: "application/json" }
+            });
+            const idsToRemove = JSON.parse(cleanJson(response.text));
+            if (Array.isArray(idsToRemove)) {
+                const removeSet = new Set(idsToRemove);
+                return data.filter(row => !removeSet.has(row.id));
+            }
+         } catch (e) {
+             console.warn("Outlier optimization failed, falling back...", e);
+         }
+    }
+
+    // NEW: Specialized Schema Enforcer Logic
+    if (action.type === 'standardize_format' || action.type === 'fix_typos' || action.type.includes('schema')) {
+        const dataStr = JSON.stringify(data);
+        const prompt = `
+            ROLE: SCHEMA ENFORCER (EXECUTIONER MODE).
+            MISSION: ${action.title}.
+            DIRECTIVE: ${action.description}.
+            TARGET: ${action.columnTarget || 'ALL COLUMNS'}.
+
+            STRICT EXECUTION RULES:
+            1. ANALYZE the target column(s) for type inconsistencies against inferred schema.
+            2. COERCE values where logical (e.g. "100" -> 100, "true" -> true, "2023/01/01" -> ISO Date).
+            3. IF COERCION FAILS:
+               - Set the cell value to NULL.
+               - FLAG the row by adding a "_flags" object: { [ColumnName]: "Review Needed: ${action.type === 'fix_typos' ? 'Unrecognized Value' : 'Type Mismatch'}" }.
+               - Preserving the "_flags" object is CRITICAL for the audit trail.
+            4. PRESERVE existing valid data.
+            5. Return ONLY the processed JSON array.
+
+            DATASET:
+            ${dataStr}
+        `;
+
+        try {
+            const response = await ai.models.generateContent({
+                model: MODEL_NAME,
+                contents: prompt,
+                config: { responseMimeType: "application/json" }
+            });
+            const cleaned = JSON.parse(cleanJson(response.text));
+            return Array.isArray(cleaned) ? cleaned : data;
+        } catch (error) {
+            console.error("Schema enforcement failed", error);
+            return data;
+        }
+    }
+
     const dataStr = JSON.stringify(data); 
     
     const prompt = `
@@ -120,13 +209,61 @@ export const cleanDataBatch = async (
             config: { responseMimeType: "application/json" }
         });
 
-        const cleaned = JSON.parse(response.text || '[]');
+        const cleaned = JSON.parse(cleanJson(response.text));
         return Array.isArray(cleaned) ? cleaned : data;
     } catch (error) {
         console.error("Execution failed", error);
         return data;
     }
 };
+
+// --- AGENT: COUNCIL (Argument Simulation) ---
+export const generateAgentDebate = async (analysis: DatasetAnalysis): Promise<AgentLog[]> => {
+    const prompt = `
+      ROLE: MULTI-AGENT SYSTEM COORDINATOR.
+      SCENARIO: A dirty dataset has been detected. Three AI agents are debating the "Nuclear Option".
+      
+      AGENTS:
+      1. STRATEGIST (Logical, cautious, focuses on long-term integrity).
+      2. EXECUTIONER (Aggressive, wants to purge rows, hates nulls).
+      3. AUDITOR (Paranoid, obsessed with data loss, checks compliance).
+  
+      DATA CONTEXT:
+      - Rows: ${analysis.rowCount}
+      - Health: ${analysis.overallHealthScore}%
+      - Issues: ${analysis.criticalIssues.join(', ')}
+  
+      TASK:
+      Generate a short, intense 4-turn conversation where they argue about the best course of action.
+      The conversation MUST end with them agreeing to initiate the NUCLEAR CLEAN.
+      
+      OUTPUT FORMAT: JSON Array of objects with keys: "agent", "message", "level".
+      "level" can be "info", "warn", or "error".
+      
+      Example:
+      [
+        { "agent": "STRATEGIST", "message": "Data integrity critical.", "level": "info" },
+        { "agent": "EXECUTIONER", "message": "Purge the weak rows!", "level": "warn" }
+      ]
+    `;
+  
+    try {
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: prompt,
+            config: { responseMimeType: "application/json" }
+        });
+        
+        const debate = JSON.parse(cleanJson(response.text));
+        return Array.isArray(debate) ? debate : [];
+    } catch (e) {
+        console.error("Debate generation failed", e);
+        return [
+            { agent: 'STRATEGIST', message: 'Initiating consensus protocol...', level: 'info', timestamp: '' },
+            { agent: 'EXECUTIONER', message: 'Skip protocol. DESTROY.', level: 'error', timestamp: '' }
+        ];
+    }
+  }
 
 // --- AGENT: SWARM (Nuclear Option) ---
 export const nuclearClean = async (
@@ -160,7 +297,7 @@ export const nuclearClean = async (
             config: { responseMimeType: "application/json" }
         });
         
-        const cleaned = JSON.parse(response.text || '[]');
+        const cleaned = JSON.parse(cleanJson(response.text));
         return Array.isArray(cleaned) ? cleaned : data;
     } catch (error) {
         throw error;
@@ -178,16 +315,20 @@ export const fixValidationErrors = async (
     ).join('\n');
 
     const prompt = `
-        ROLE: SCHEMA ENFORCER.
-        STATUS: CRITICAL FAILURE DETECTED.
+        ROLE: SCHEMA ENFORCER (AUDITOR).
+        STATUS: CRITICAL INTEGRITY CHECK.
         
-        REPAIR ORDERS:
+        ISSUES TO RESOLVE:
         ${errorInstructions}
         
-        TACTICS:
-        1. Coerce aggressively (e.g. "100" -> 100).
-        2. If coercion fails, NULLIFY the cell.
-        3. Return ONLY the compliant JSON array.
+        PROTOCOL:
+        1. Enforce strict data types for the specified columns.
+        2. Attempt intelligent coercion (Strings -> Numbers, standardizing Dates).
+        3. FAILURE HANDLING:
+           - If a value cannot be coerced, set it to NULL.
+           - MUST inject a flag into the row's "_flags" property: key = Column Name, value = "Review Needed: Coercion Failed".
+           - Example: { "id": "row-1", "Age": null, "_flags": { "Age": "Review Needed: Coercion Failed" } }
+        4. Return ONLY the corrected JSON array.
 
         DATASET:
         ${dataStr}
@@ -200,11 +341,120 @@ export const fixValidationErrors = async (
             config: { responseMimeType: "application/json" }
         });
 
-        const cleaned = JSON.parse(response.text || '[]');
+        const cleaned = JSON.parse(cleanJson(response.text));
         return Array.isArray(cleaned) ? cleaned : data;
 
     } catch (error) {
         console.error("Validation repair failed", error);
         throw error;
+    }
+}
+
+// --- AGENT: CHATBOT (Gemini 3 Pro) ---
+export const queryChatBot = async (
+  history: ChatMessage[], 
+  currentMessage: string, 
+  contextData: any
+): Promise<string> => {
+  const formattedHistory = history.map(msg => ({
+    role: msg.role,
+    parts: [{ text: msg.text }]
+  }));
+
+  const analysis = contextData.analysis;
+  const columnsInfo = analysis?.columns?.map((c: any) => `${c.name} (${c.type})`).join(', ') || 'None';
+
+  const systemInstruction = `
+    ROLE: DATACLYSM INTELLIGENCE (MODEL: GEMINI 3 PRO).
+    MISSION: Assist the human operator in understanding and cleaning their data.
+    
+    CURRENT DATASET CONTEXT:
+    - Stage: ${contextData.stage}
+    - Total Rows: ${analysis?.rowCount || 'N/A'}
+    - Total Columns: ${analysis?.columnCount || 'N/A'}
+    - Health Score: ${analysis?.overallHealthScore || '0'}%
+    - Column Structure: ${columnsInfo}
+    - Critical Threats: ${analysis?.criticalIssues?.join('; ') || 'None detected'}
+    
+    DIRECTIVES:
+    1. You are a high-tech, futuristic AI integrated into the DATACLYSM system.
+    2. Use technical, precise language but remain helpful.
+    3. Refer to the "dataset" and specific columns by name.
+    4. If asked about cleaning, suggest specific actions based on the "Critical Threats".
+    5. Keep responses concise (under 100 words) unless asked for detailed analysis.
+  `;
+
+  try {
+    const chat = ai.chats.create({
+        model: CHAT_MODEL_NAME,
+        history: formattedHistory,
+        config: {
+            systemInstruction
+        }
+    });
+    
+    const result = await chat.sendMessage({ message: currentMessage });
+    return result.text;
+  } catch (error) {
+      console.error("Chat failed", error);
+      return "COMMUNICATION LINK SEVERED. RE-ROUTING...";
+  }
+}
+
+// --- AGENT: EVOLUTION ARCHITECT (Self-Improvement) ---
+export const generateEvolutionProposals = async (
+    analysis: DatasetAnalysis
+): Promise<EvolutionProposal[]> => {
+    
+    const prompt = `
+        ROLE: EVOLUTION ARCHITECT (SELF-IMPROVEMENT CORE).
+        OBJECTIVE: Analyze the recent data cleaning session and propose CODE IMPROVEMENTS to the 'DATACLYSM' codebase itself to handle this type of data better next time.
+        
+        DATA PROFILE:
+        - Columns: ${analysis.columnCount}
+        - Rows: ${analysis.rowCount}
+        - Issues: ${analysis.criticalIssues.join(', ')}
+        
+        TASK:
+        Generate 2 concrete TypeScript/React code improvements (patches) that would optimize this application.
+        
+        OUTPUT SCHEMA: JSON Array of Objects
+        {
+            "id": "evo-1",
+            "title": "string (e.g. 'Optimize Date Parsing Regex')",
+            "description": "string (why this helps)",
+            "targetFile": "string (e.g. 'utils/csvHelper.ts')",
+            "codePatch": "string (the actual code snippet to insert/replace)",
+            "performanceImpact": "string (e.g. '+15% Speed')"
+        }
+    `;
+
+    try {
+        const response = await ai.models.generateContent({
+            model: MODEL_NAME,
+            contents: prompt,
+            config: {
+                 responseMimeType: "application/json",
+                 responseSchema: {
+                    type: Type.ARRAY,
+                    items: {
+                        type: Type.OBJECT,
+                        properties: {
+                            id: { type: Type.STRING },
+                            title: { type: Type.STRING },
+                            description: { type: Type.STRING },
+                            targetFile: { type: Type.STRING },
+                            codePatch: { type: Type.STRING },
+                            performanceImpact: { type: Type.STRING }
+                        }
+                    }
+                 }
+            }
+        });
+        
+        return JSON.parse(cleanJson(response.text));
+    } catch (error) {
+        console.error("Evolution generation failed", error);
+        return [];
     }
 }

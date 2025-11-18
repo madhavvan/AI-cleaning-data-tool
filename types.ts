@@ -1,8 +1,9 @@
-export type CellValue = string | number | boolean | null;
+export type CellValue = string | number | boolean | null | undefined;
 
 export interface DataRow {
   id: string;
-  [key: string]: CellValue;
+  _flags?: Record<string, string>;
+  [key: string]: CellValue | Record<string, string>; // Broaden index signature to allow _flags
 }
 
 export interface ColumnStats {
@@ -49,9 +50,24 @@ export interface ValidationResult {
 
 export interface AgentLog {
   timestamp: string;
-  agent: 'STRATEGIST' | 'EXECUTIONER' | 'AUDITOR' | 'SYSTEM';
+  agent: 'STRATEGIST' | 'EXECUTIONER' | 'AUDITOR' | 'SYSTEM' | 'EVOLUTION';
   message: string;
-  level: 'info' | 'warn' | 'success' | 'error';
+  level: 'info' | 'warn' | 'success' | 'error' | 'matrix';
+}
+
+export interface ChatMessage {
+  role: 'user' | 'model';
+  text: string;
+  timestamp: string;
+}
+
+export interface EvolutionProposal {
+  id: string;
+  title: string;
+  description: string;
+  targetFile: string;
+  codePatch: string;
+  performanceImpact: string;
 }
 
 export interface AppState {
@@ -64,5 +80,7 @@ export interface AppState {
   agentLogs: AgentLog[];
   validationResult?: ValidationResult;
   isValidationModalOpen: boolean;
+  isEvolutionPanelOpen: boolean;
+  evolutionProposals: EvolutionProposal[];
   nuclearMode: boolean;
 }

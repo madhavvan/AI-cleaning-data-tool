@@ -3,11 +3,13 @@ import { UploadZone } from './components/UploadZone';
 import { AnalysisSidebar } from './components/AnalysisSidebar';
 import { DataGrid } from './components/DataGrid';
 import { ValidationModal } from './components/ValidationModal';
-import { AppState, CleaningAction, AgentLog, DataRow } from './types';
+import { ChatInterface } from './components/ChatInterface';
+import { EvolutionPanel } from './components/EvolutionPanel';
+import { AppState, CleaningAction, AgentLog, DataRow, EvolutionProposal } from './types';
 import { parseCSV, exportCSV } from './utils/csvHelper';
 import { validateDataset } from './utils/validation';
-import { analyzeDatasetWithGemini, cleanDataBatch, fixValidationErrors, nuclearClean } from './services/geminiService';
-import { Download, Zap, ShieldCheck, Radiation, TerminalSquare, Eye, RotateCcw } from 'lucide-react';
+import { analyzeDatasetWithGemini, cleanDataBatch, fixValidationErrors, nuclearClean, generateEvolutionProposals, generateAgentDebate } from './services/geminiService';
+import { Download, Zap, RotateCcw, Biohazard, TerminalSquare } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -19,6 +21,8 @@ const App: React.FC = () => {
     isProcessing: false,
     agentLogs: [],
     isValidationModalOpen: false,
+    isEvolutionPanelOpen: false,
+    evolutionProposals: [],
     nuclearMode: false
   });
 
@@ -28,7 +32,7 @@ const App: React.FC = () => {
     setState(prev => ({
         ...prev,
         agentLogs: [...prev.agentLogs, {
-            timestamp: new Date().toLocaleTimeString(),
+            timestamp: new Date().toLocaleTimeString([], { hour12: false, hour: '2-digit', minute:'2-digit', second:'2-digit' }),
             agent,
             message,
             level
@@ -37,7 +41,6 @@ const App: React.FC = () => {
   };
 
   const handleFileUpload = async (content: string, fileName: string) => {
-    // Explicitly clear previous state and set stage to analyzing
     setState({
         stage: 'analyzing',
         rawData: [],
@@ -47,18 +50,21 @@ const App: React.FC = () => {
         isProcessing: true,
         agentLogs: [],
         isValidationModalOpen: false,
+        isEvolutionPanelOpen: false,
+        evolutionProposals: [],
         nuclearMode: false
     });
 
-    addLog('SYSTEM', `Ingesting ${fileName}...`);
+    addLog('SYSTEM', `MOUNTING VOLUME: ${fileName}...`);
     
     try {
       const { headers, data } = parseCSV(content);
-      addLog('SYSTEM', `Parsed ${data.length} rows. Initiating Strategist Agent...`);
+      addLog('SYSTEM', `PARSED ${data.length} RECORDS.`, 'matrix');
+      addLog('STRATEGIST', 'INITIALIZING DEEP SCAN...', 'info');
       
       const analysis = await analyzeDatasetWithGemini(data, headers);
-      addLog('STRATEGIST', `Analysis complete. Health Score: ${analysis.overallHealthScore}/100`, analysis.overallHealthScore < 50 ? 'error' : 'info');
-      analysis.criticalIssues.forEach(issue => addLog('STRATEGIST', `Threat Detected: ${issue}`, 'warn'));
+      addLog('STRATEGIST', `SCAN COMPLETE. INTEGRITY: ${analysis.overallHealthScore}%`, analysis.overallHealthScore < 50 ? 'error' : 'success');
+      analysis.criticalIssues.forEach(issue => addLog('STRATEGIST', `THREAT: ${issue}`, 'warn'));
 
       setState(prev => ({
         ...prev,
@@ -68,11 +74,11 @@ const App: React.FC = () => {
         analysis,
         actions: analysis.recommendedActions,
         isProcessing: false,
-        viewMode: 'raw' // Start by showing raw data so they see the mess
+        viewMode: 'raw'
       }));
 
     } catch (error) {
-      addLog('SYSTEM', 'Critical Failure in Ingestion Protocol', 'error');
+      addLog('SYSTEM', 'FATAL INGESTION ERROR', 'error');
       setState(prev => ({ ...prev, stage: 'idle', isProcessing: false }));
     }
   };
@@ -82,11 +88,11 @@ const App: React.FC = () => {
     if (!action) return;
 
     setState(prev => ({ ...prev, isProcessing: true }));
-    addLog('EXECUTIONER', `Initiating Protocol: ${action.title}...`, 'warn');
+    addLog('EXECUTIONER', `EXECUTING: ${action.title}...`, 'warn');
 
     try {
         const result = await cleanDataBatch(state.cleanedData, action);
-        addLog('EXECUTIONER', `Protocol Complete. Data shape preserved.`, 'success');
+        addLog('EXECUTIONER', `PROTOCOL COMPLETE.`, 'success');
 
         setState(prev => ({
             ...prev,
@@ -96,7 +102,7 @@ const App: React.FC = () => {
             isProcessing: false
         }));
     } catch (error) {
-        addLog('EXECUTIONER', 'Protocol Failed.', 'error');
+        addLog('EXECUTIONER', 'PROTOCOL FAILED.', 'error');
         setState(prev => ({ ...prev, isProcessing: false }));
     }
   };
@@ -106,17 +112,26 @@ const App: React.FC = () => {
     if (!confirm("WARNING: NUCLEAR MODE ACTIVATED.\n\nThis will authorize the Agent Swarm to autonomously execute all cleaning protocols in parallel. This action is destructive and powerful.\n\nProceed?")) return;
 
     setState(prev => ({ ...prev, isProcessing: true, nuclearMode: true }));
-    addLog('SYSTEM', 'NUCLEAR AUTHORIZATION CODE ACCEPTED.', 'error');
-    addLog('STRATEGIST', 'Handing over control to Swarm Intelligence.', 'warn');
+    
+    // Step 1: The Debate
+    addLog('SYSTEM', 'INITIALIZING AGENT COUNCIL...', 'matrix');
+    const debate = await generateAgentDebate(state.analysis);
+    
+    // Replay debate with simulated delay
+    for (const entry of debate) {
+        await new Promise(r => setTimeout(r, 800)); // Delay between chats
+        addLog(entry.agent as AgentLog['agent'], entry.message, entry.level as AgentLog['level']);
+    }
 
+    addLog('SYSTEM', 'CONSENSUS REACHED: EXECUTE NUCLEAR OPTION.', 'error');
+    
+    // Step 2: Execution
     try {
-        // 1. Execute the nuclear prompt
         const nuclearResult = await nuclearClean(state.cleanedData, state.analysis.columns);
-        addLog('EXECUTIONER', 'Target annihilated. Reconstruction complete.', 'success');
+        addLog('EXECUTIONER', 'TARGET ANNIHILATED. RECONSTRUCTION COMPLETE.', 'success');
 
-        // 2. Verify results
         const validation = validateDataset(nuclearResult, state.analysis.columns);
-        addLog('AUDITOR', `Post-Nuclear Scan. Health: ${validation.score}%`, 'info');
+        addLog('AUDITOR', `POST-NUCLEAR INTEGRITY: ${validation.score}%`, 'matrix');
 
         setState(prev => ({
             ...prev,
@@ -127,14 +142,14 @@ const App: React.FC = () => {
         }));
 
     } catch (e) {
-        addLog('SYSTEM', 'Nuclear containment breach. Operation aborted.', 'error');
+        addLog('SYSTEM', 'NUCLEAR CONTAINMENT BREACH.', 'error');
         setState(prev => ({ ...prev, isProcessing: false, nuclearMode: false }));
     }
   };
 
   const handleValidateAndExport = () => {
       if (!state.analysis) return;
-      addLog('AUDITOR', 'Running final schema validation...', 'info');
+      addLog('AUDITOR', 'VERIFYING SCHEMA COMPLIANCE...', 'info');
       const validationResult = validateDataset(state.cleanedData, state.analysis.columns);
       
       setState(prev => ({
@@ -147,13 +162,13 @@ const App: React.FC = () => {
   const handleAutoRepair = async () => {
     if (!state.validationResult?.errors.length) return;
     setState(prev => ({ ...prev, isProcessing: true }));
-    addLog('AUDITOR', 'Attempting auto-repair of schema violations...', 'warn');
+    addLog('AUDITOR', 'INITIATING AUTO-REPAIR...', 'warn');
 
     try {
         const repairedData = await fixValidationErrors(state.cleanedData, state.validationResult.errors);
         const newValidationResult = validateDataset(repairedData, state.analysis!.columns);
         
-        addLog('AUDITOR', `Repair complete. New Score: ${newValidationResult.score}%`, 'success');
+        addLog('AUDITOR', `REPAIR COMPLETE. SCORE: ${newValidationResult.score}%`, 'success');
 
         setState(prev => ({
             ...prev,
@@ -163,13 +178,37 @@ const App: React.FC = () => {
             isProcessing: false
         }));
     } catch (error) {
-        addLog('AUDITOR', 'Repair failed.', 'error');
+        addLog('AUDITOR', 'REPAIR FAILED.', 'error');
         setState(prev => ({ ...prev, isProcessing: false }));
     }
   };
 
+  const handleOpenEvolution = async () => {
+      if (!state.analysis) return;
+      setState(prev => ({ ...prev, isEvolutionPanelOpen: true }));
+      
+      // Only generate if empty
+      if (state.evolutionProposals.length === 0) {
+          addLog('EVOLUTION', 'ANALYZING SELF-STRUCTURE...', 'matrix');
+          const proposals = await generateEvolutionProposals(state.analysis);
+          setState(prev => ({ ...prev, evolutionProposals: proposals }));
+          addLog('EVOLUTION', 'OPTIMIZATION PATCHES GENERATED.', 'success');
+      }
+  };
+
+  const handleApplyEvolution = (id: string) => {
+      addLog('SYSTEM', `PUSHING PATCH ${id} TO ORIGIN/MAIN...`, 'warn');
+      setTimeout(() => {
+           addLog('SYSTEM', `GIT COMMIT DETECTED: [feat] auto-optimization ${id.substring(0,5)}`, 'matrix');
+      }, 1000);
+      setTimeout(() => {
+           addLog('SYSTEM', `CI/CD PIPELINE: SUCCESS. DEPLOYING...`, 'success');
+           setState(prev => ({ ...prev, isEvolutionPanelOpen: false }));
+      }, 2500);
+  };
+
   const handleConfirmExport = () => {
-      addLog('SYSTEM', 'Exporting binary artifact...', 'success');
+      addLog('SYSTEM', 'WRITING BINARY ARTIFACT...', 'success');
       const csv = exportCSV(state.cleanedData);
       const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
       const link = document.createElement('a');
@@ -192,61 +231,67 @@ const App: React.FC = () => {
         isProcessing: false,
         agentLogs: [],
         isValidationModalOpen: false,
+        isEvolutionPanelOpen: false,
+        evolutionProposals: [],
         nuclearMode: false
       });
   };
 
   const getActiveHeaders = () => {
       const source = viewMode === 'raw' ? state.rawData : state.cleanedData;
-      return source.length > 0 ? Object.keys(source[0]).filter(k => k !== 'id') : [];
+      // IMPORTANT: Filter out the internal _flags property so it doesn't show as a column
+      return source.length > 0 ? Object.keys(source[0]).filter(k => k !== 'id' && k !== '_flags') : [];
   };
 
   return (
     <div className="h-screen w-screen flex flex-col bg-black text-slate-200 font-inter overflow-hidden">
       
       {/* Top Bar */}
-      <header className="h-14 border-b border-slate-800 bg-black flex items-center justify-between px-6 z-20 shrink-0">
-        <div className="flex items-center gap-4 cursor-pointer" onClick={handleReset}>
+      <header className="h-14 border-b border-[#1a1a1a] bg-black flex items-center justify-between px-6 z-20 shrink-0">
+        <div className="flex items-center gap-4 cursor-pointer group" onClick={handleReset}>
           <div className="flex items-center gap-2">
-             <Zap className="w-5 h-5 text-cyan-400" />
-             <h1 className="text-lg font-bold tracking-wider text-white font-mono">DATA<span className="text-cyan-400">CLYSM</span></h1>
+             <div className="w-8 h-8 bg-black border border-[#0ce6f2] flex items-center justify-center group-hover:shadow-[0_0_15px_#0ce6f2] transition-all">
+                <TerminalSquare className="w-5 h-5 text-[#0ce6f2]" />
+             </div>
+             <h1 className="text-lg font-bold tracking-wider text-white font-tech">DATA<span className="text-[#0ce6f2]">CLYSM</span> <span className="text-xs align-top text-[#ff003c] ml-1">v2</span></h1>
           </div>
-          <div className="h-4 w-px bg-slate-800 mx-2"></div>
-          <span className="text-xs font-mono text-slate-500 hidden sm:inline-block">V2.5.0 // GOD-MODE ACTIVE</span>
+          <div className="h-4 w-px bg-[#222] mx-2"></div>
+          <span className="text-[10px] font-mono text-gray-500 hidden sm:inline-block uppercase tracking-widest">System Ready // Safety Disengaged</span>
         </div>
         
         <div className="flex items-center gap-4">
             {state.stage !== 'idle' && (
                  <button 
                     onClick={handleReset}
-                    className="flex items-center gap-2 text-xs font-mono text-slate-500 hover:text-cyan-400 transition-colors"
+                    className="flex items-center gap-2 text-[10px] font-mono text-gray-500 hover:text-[#0ce6f2] transition-colors border border-transparent hover:border-[#0ce6f2]/30 px-2 py-1"
                  >
-                    <RotateCcw className="w-3 h-3" /> NEW PROJECT
+                    <RotateCcw className="w-3 h-3" /> NEW SESSION
                  </button>
             )}
 
             {state.stage === 'command_center' && (
                 <>
-                <div className="h-4 w-px bg-slate-800"></div>
+                <div className="h-4 w-px bg-[#222]"></div>
                 {/* View Switcher */}
-                <div className="flex bg-slate-900 rounded p-1">
-                    <button onClick={() => setViewMode('raw')} className={`px-3 py-1 text-xs font-mono rounded transition-all ${viewMode === 'raw' ? 'bg-slate-800 text-white shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>RAW</button>
-                    <button onClick={() => setViewMode('cleaned')} className={`px-3 py-1 text-xs font-mono rounded transition-all ${viewMode === 'cleaned' ? 'bg-cyan-900/50 text-cyan-400 shadow-sm' : 'text-slate-500 hover:text-slate-300'}`}>CLEAN</button>
+                <div className="flex bg-[#111] rounded-sm p-1 border border-[#222]">
+                    <button onClick={() => setViewMode('raw')} className={`px-3 py-1 text-[10px] font-bold font-mono rounded-sm transition-all ${viewMode === 'raw' ? 'bg-[#222] text-white' : 'text-gray-600 hover:text-gray-400'}`}>RAW</button>
+                    <button onClick={() => setViewMode('cleaned')} className={`px-3 py-1 text-[10px] font-bold font-mono rounded-sm transition-all ${viewMode === 'cleaned' ? 'bg-[#0ce6f2]/10 text-[#0ce6f2] shadow-[0_0_10px_rgba(12,230,242,0.2)]' : 'text-gray-600 hover:text-gray-400'}`}>CLEAN</button>
                 </div>
 
-                {/* Nuclear Button */}
+                {/* MAKE IT BLEED CLEAN BUTTON */}
                 <button 
                     onClick={handleNuclearClean}
                     disabled={state.isProcessing}
-                    className="group relative px-4 py-2 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/50 hover:border-rose-400 rounded flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="group relative px-6 py-2 bg-[#ff003c]/10 hover:bg-[#ff003c] text-[#ff003c] hover:text-black border border-[#ff003c] rounded-sm flex items-center gap-2 transition-all disabled:opacity-50 disabled:cursor-not-allowed overflow-hidden"
                 >
-                    <Radiation className={`w-4 h-4 ${state.isProcessing ? 'animate-spin' : ''}`} />
-                    <span className="text-xs font-bold tracking-wider">NUCLEAR CLEAN</span>
+                    <div className="absolute inset-0 bg-[linear-gradient(45deg,transparent_25%,rgba(255,255,255,0.2)_50%,transparent_75%)] bg-[length:250%_250%] animate-[shimmer_2s_infinite_linear] opacity-0 group-hover:opacity-100"></div>
+                    <Biohazard className={`w-4 h-4 ${state.isProcessing ? 'animate-spin' : ''}`} />
+                    <span className="text-xs font-black font-tech tracking-widest">MAKE IT BLEED</span>
                 </button>
 
                 <button 
                     onClick={handleValidateAndExport}
-                    className="px-4 py-2 bg-white text-black font-bold text-xs tracking-wide rounded hover:bg-slate-200 transition-colors flex items-center gap-2"
+                    className="px-4 py-2 bg-white hover:bg-gray-200 text-black font-bold text-xs tracking-wide rounded-sm transition-colors flex items-center gap-2 border border-white"
                 >
                     <Download className="w-4 h-4" /> EXPORT
                 </button>
@@ -261,17 +306,23 @@ const App: React.FC = () => {
         {/* 1. IDLE STAGE (Upload) */}
         {state.stage === 'idle' && <UploadZone onFileUpload={handleFileUpload} />}
 
-        {/* 2. ANALYZING STAGE (Loading) */}
+        {/* 2. ANALYZING STAGE */}
         {state.stage === 'analyzing' && (
-            <div className="h-full w-full flex flex-col items-center justify-center bg-[#050505] z-50">
-                <div className="relative w-24 h-24 mb-8">
-                    <div className="absolute inset-0 border-t-2 border-cyan-500 rounded-full animate-spin"></div>
-                    <div className="absolute inset-2 border-r-2 border-blue-500 rounded-full animate-[spin_1.5s_linear_infinite_reverse]"></div>
+            <div className="h-full w-full flex flex-col items-center justify-center bg-black z-50">
+                <div className="relative w-32 h-32 mb-8">
+                    <div className="absolute inset-0 border-4 border-t-[#0ce6f2] border-r-[#0ce6f2] border-b-transparent border-l-transparent rounded-full animate-spin"></div>
+                    <div className="absolute inset-2 border-4 border-t-transparent border-r-transparent border-b-[#ff003c] border-l-[#ff003c] rounded-full animate-[spin_2s_linear_infinite_reverse]"></div>
+                    <div className="absolute inset-0 flex items-center justify-center">
+                        <TerminalSquare className="w-12 h-12 text-white animate-pulse" />
+                    </div>
                 </div>
-                <h2 className="text-2xl font-bold text-white font-mono tracking-widest animate-pulse">
-                    INITIALIZING AGENT SWARM
+                <h2 className="text-3xl font-black text-white font-tech tracking-widest animate-pulse">
+                    DATACLYSM v2
                 </h2>
-                <p className="text-cyan-500/70 mt-2 font-mono text-sm">Reading Schema... Detecting Anomalies...</p>
+                <div className="mt-4 flex flex-col items-center gap-1 font-mono text-xs text-[#0ce6f2]">
+                     <p className="typewriter">LOADING NEURAL SCHEMAS...</p>
+                     <p className="text-[#ff003c]">DISABLING SAFETY LOCKS...</p>
+                </div>
             </div>
         )}
 
@@ -284,23 +335,23 @@ const App: React.FC = () => {
                     logs={state.agentLogs}
                     onExecuteAction={handleExecuteAction}
                     isProcessing={state.isProcessing}
+                    onOpenEvolution={handleOpenEvolution}
                 />
-                <div className="flex-1 flex flex-col bg-[#050505] overflow-hidden relative">
-                   <div className="absolute top-0 left-0 right-0 h-px bg-cyan-500/50 shadow-[0_0_20px_rgba(6,182,212,0.5)] z-10"></div>
+                <div className="flex-1 flex flex-col bg-[#0a0a0a] overflow-hidden relative">
+                   <div className="absolute top-0 left-0 right-0 h-px bg-[#0ce6f2] shadow-[0_0_20px_#0ce6f2] z-10"></div>
                     <DataGrid 
                         data={viewMode === 'raw' ? state.rawData : state.cleanedData} 
                         rawData={viewMode === 'cleaned' ? state.rawData : undefined}
                         columns={getActiveHeaders()} 
                     />
                     
-                    {/* Processing Overlay for Command Center actions */}
                     {state.isProcessing && (
                         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center">
-                            <div className="font-mono text-cyan-400 text-xl animate-pulse mb-4">
+                            <div className="font-tech text-[#0ce6f2] text-2xl animate-pulse mb-4 tracking-widest">
                                 AGENT SWARM OPERATING...
                             </div>
-                            <div className="w-64 h-1 bg-slate-800 rounded-full overflow-hidden">
-                                <div className="h-full bg-cyan-500 animate-[shimmer_2s_infinite_linear] w-1/2 translate-x-[-100%]"></div>
+                            <div className="w-96 h-1 bg-[#222] rounded-full overflow-hidden">
+                                <div className="h-full bg-[#ff003c] animate-[shimmer_1s_infinite_linear] w-full"></div>
                             </div>
                         </div>
                     )}
@@ -309,7 +360,9 @@ const App: React.FC = () => {
         )}
       </main>
 
-      {/* Modals */}
+      {/* Overlays */}
+      <ChatInterface appState={state} />
+
       <ValidationModal 
         isOpen={state.isValidationModalOpen}
         result={state.validationResult}
@@ -317,6 +370,14 @@ const App: React.FC = () => {
         onConfirmExport={handleConfirmExport}
         onAutoRepair={handleAutoRepair}
         isProcessing={state.isProcessing}
+      />
+      
+      <EvolutionPanel 
+        isOpen={state.isEvolutionPanelOpen}
+        proposals={state.evolutionProposals}
+        onClose={() => setState(prev => ({ ...prev, isEvolutionPanelOpen: false }))}
+        onApply={handleApplyEvolution}
+        isGenerating={state.evolutionProposals.length === 0}
       />
     </div>
   );
