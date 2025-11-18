@@ -14,23 +14,23 @@ export interface ColumnStats {
   sampleValues: string[];
 }
 
+export interface CleaningAction {
+  id: string;
+  type: 'impute' | 'remove_duplicates' | 'standardize_format' | 'remove_outliers' | 'fix_typos' | 'nuclear_opt';
+  title: string;
+  description: string;
+  impact: 'high' | 'medium' | 'low';
+  columnTarget?: string; 
+  status: 'pending' | 'processing' | 'completed';
+}
+
 export interface DatasetAnalysis {
   rowCount: number;
   columnCount: number;
   columns: ColumnStats[];
-  overallHealthScore: number; // 0 to 100
+  overallHealthScore: number; 
   criticalIssues: string[];
   recommendedActions: CleaningAction[];
-}
-
-export interface CleaningAction {
-  id: string;
-  type: 'impute' | 'remove_duplicates' | 'standardize_format' | 'remove_outliers' | 'fix_typos';
-  title: string;
-  description: string;
-  impact: 'high' | 'medium' | 'low';
-  columnTarget?: string; // If specific to a column
-  status: 'pending' | 'processing' | 'completed';
 }
 
 export interface ValidationError {
@@ -47,14 +47,22 @@ export interface ValidationResult {
   totalRowsChecked: number;
 }
 
+export interface AgentLog {
+  timestamp: string;
+  agent: 'STRATEGIST' | 'EXECUTIONER' | 'AUDITOR' | 'SYSTEM';
+  message: string;
+  level: 'info' | 'warn' | 'success' | 'error';
+}
+
 export interface AppState {
-  stage: 'idle' | 'analyzing' | 'review' | 'export';
+  stage: 'idle' | 'analyzing' | 'command_center';
   rawData: DataRow[];
   cleanedData: DataRow[];
   analysis: DatasetAnalysis | null;
   actions: CleaningAction[];
   isProcessing: boolean;
-  loadingMessage: string;
+  agentLogs: AgentLog[];
   validationResult?: ValidationResult;
   isValidationModalOpen: boolean;
+  nuclearMode: boolean;
 }

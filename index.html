@@ -3,29 +3,46 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>AutoCleanse AI</title>
+    <title>DATACLYSM | God-Mode Data Cleaning</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
     <style>
+      :root {
+        --neon-red: #ff2a6d;
+        --neon-blue: #05d9e8;
+        --void-bg: #01012b;
+      }
       body {
         font-family: 'Inter', sans-serif;
-        background-color: #0f172a;
+        background-color: #000000;
         color: #e2e8f0;
+        overflow: hidden;
+      }
+      .font-mono {
+        font-family: 'JetBrains Mono', monospace;
+      }
+      .neon-text-blue {
+        text-shadow: 0 0 5px #05d9e8, 0 0 10px #05d9e8;
+      }
+      .neon-text-red {
+        text-shadow: 0 0 5px #ff2a6d, 0 0 10px #ff2a6d;
+      }
+      .neon-border {
+        box-shadow: 0 0 5px #05d9e8, inset 0 0 5px #05d9e8;
       }
       /* Custom scrollbar */
       ::-webkit-scrollbar {
-        width: 8px;
-        height: 8px;
+        width: 6px;
+        height: 6px;
       }
       ::-webkit-scrollbar-track {
-        background: #1e293b; 
+        background: #0a0a0a; 
       }
       ::-webkit-scrollbar-thumb {
-        background: #475569; 
-        border-radius: 4px;
+        background: #333; 
       }
       ::-webkit-scrollbar-thumb:hover {
-        background: #64748b; 
+        background: #05d9e8; 
       }
     </style>
   <script type="importmap">

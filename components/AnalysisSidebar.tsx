@@ -1,130 +1,131 @@
-import React from 'react';
-import { DatasetAnalysis, CleaningAction } from '../types';
-import { AlertTriangle, CheckCircle, Sparkles, Activity, PieChart } from 'lucide-react';
-import { PieChart as RePie, Pie, Cell, ResponsiveContainer, Tooltip } from 'recharts';
+import React, { useEffect, useRef } from 'react';
+import { DatasetAnalysis, CleaningAction, AgentLog } from '../types';
+import { AlertTriangle, CheckCircle, Terminal, Activity, Zap, ShieldAlert } from 'lucide-react';
+import { PieChart as RePie, Pie, Cell, ResponsiveContainer } from 'recharts';
 
 interface AnalysisSidebarProps {
   analysis: DatasetAnalysis;
   actions: CleaningAction[];
+  logs: AgentLog[];
   onExecuteAction: (actionId: string) => void;
   isProcessing: boolean;
 }
 
-export const AnalysisSidebar: React.FC<AnalysisSidebarProps> = ({ analysis, actions, onExecuteAction, isProcessing }) => {
-  
-  const getHealthColor = (score: number) => {
-    if (score >= 80) return 'text-emerald-400';
-    if (score >= 50) return 'text-amber-400';
-    return 'text-rose-400';
-  };
+export const AnalysisSidebar: React.FC<AnalysisSidebarProps> = ({ analysis, actions, logs, onExecuteAction, isProcessing }) => {
+  const logEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    logEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [logs]);
 
   const dataQuality = [
-    { name: 'Clean', value: analysis.overallHealthScore, color: '#10b981' },
-    { name: 'Issues', value: 100 - analysis.overallHealthScore, color: '#f43f5e' }
+    { name: 'Clean', value: analysis.overallHealthScore, color: '#06b6d4' },
+    { name: 'Corrupt', value: 100 - analysis.overallHealthScore, color: '#334155' }
   ];
 
   return (
-    <div className="w-96 bg-slate-900 border-r border-slate-800 flex flex-col h-full overflow-hidden">
-      <div className="p-6 border-b border-slate-800">
-        <h2 className="text-lg font-semibold text-white flex items-center gap-2">
-          <Activity className="w-5 h-5 text-cyan-400" />
-          Data Health Report
+    <div className="w-[400px] bg-black border-r border-slate-800 flex flex-col h-full overflow-hidden font-mono">
+      {/* Header */}
+      <div className="p-4 border-b border-slate-800 bg-slate-900/50">
+        <h2 className="text-sm font-bold text-cyan-400 tracking-widest flex items-center gap-2">
+          <Activity className="w-4 h-4" />
+          SYSTEM DIAGNOSTICS
         </h2>
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 space-y-8">
-        {/* Health Score */}
-        <div className="flex items-center justify-between mb-2">
-          <div>
-             <span className={`text-4xl font-bold ${getHealthColor(analysis.overallHealthScore)}`}>
-              {analysis.overallHealthScore}%
-            </span>
-            <p className="text-sm text-slate-400 mt-1">Quality Score</p>
-          </div>
-          <div className="h-20 w-20">
-             <ResponsiveContainer width="100%" height="100%">
-                <RePie data={dataQuality} dataKey="value" innerRadius={25} outerRadius={35} startAngle={90} endAngle={-270}>
-                    {dataQuality.map((entry, index) => (
-                        <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
-                    ))}
-                </RePie>
-             </ResponsiveContainer>
-          </div>
-        </div>
-
-        {/* Stats */}
-        <div className="grid grid-cols-2 gap-4">
-            <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
-                <p className="text-xs text-slate-400">Rows</p>
-                <p className="text-xl font-semibold text-white">{analysis.rowCount}</p>
+      {/* Metrics Grid */}
+      <div className="p-4 grid grid-cols-2 gap-4 border-b border-slate-800">
+        <div className="bg-slate-900/50 p-4 border border-slate-800 rounded relative overflow-hidden group">
+            <div className="absolute top-0 right-0 p-1">
+                <span className="text-[10px] text-slate-500">HEALTH_INDEX</span>
             </div>
-            <div className="bg-slate-800/50 p-3 rounded-lg border border-slate-700">
-                <p className="text-xs text-slate-400">Columns</p>
-                <p className="text-xl font-semibold text-white">{analysis.columnCount}</p>
-            </div>
-        </div>
-
-        {/* Critical Issues */}
-        <div>
-          <h3 className="text-sm font-medium text-slate-300 mb-3 uppercase tracking-wider">Critical Issues</h3>
-          <div className="space-y-2">
-            {analysis.criticalIssues.map((issue, idx) => (
-              <div key={idx} className="flex items-start gap-3 p-3 bg-rose-500/10 border border-rose-500/20 rounded-lg">
-                <AlertTriangle className="w-5 h-5 text-rose-400 shrink-0 mt-0.5" />
-                <span className="text-sm text-rose-200">{issue}</span>
-              </div>
-            ))}
-            {analysis.criticalIssues.length === 0 && (
-                <div className="text-sm text-emerald-400 flex items-center gap-2">
-                    <CheckCircle className="w-4 h-4" /> No critical issues found.
+            <div className="flex items-end justify-between mt-2">
+                <span className={`text-4xl font-black ${analysis.overallHealthScore > 80 ? 'text-emerald-400' : analysis.overallHealthScore > 50 ? 'text-amber-400' : 'text-rose-500'}`}>
+                    {analysis.overallHealthScore}%
+                </span>
+                <div className="h-8 w-8">
+                     <ResponsiveContainer>
+                        <RePie data={dataQuality} dataKey="value" innerRadius={10} outerRadius={14} startAngle={90} endAngle={-270}>
+                            {dataQuality.map((entry, index) => (
+                                <Cell key={`cell-${index}`} fill={entry.color} stroke="none" />
+                            ))}
+                        </RePie>
+                     </ResponsiveContainer>
                 </div>
-            )}
-          </div>
+            </div>
         </div>
+        <div className="space-y-2">
+            <div className="bg-slate-900/50 px-3 py-2 border border-slate-800 rounded flex justify-between items-center">
+                <span className="text-xs text-slate-500">ROWS</span>
+                <span className="text-sm font-bold text-white">{analysis.rowCount}</span>
+            </div>
+            <div className="bg-slate-900/50 px-3 py-2 border border-slate-800 rounded flex justify-between items-center">
+                <span className="text-xs text-slate-500">COLS</span>
+                <span className="text-sm font-bold text-white">{analysis.columnCount}</span>
+            </div>
+        </div>
+      </div>
 
-        {/* Recommended Actions */}
-        <div>
-          <h3 className="text-sm font-medium text-slate-300 mb-3 uppercase tracking-wider flex items-center gap-2">
-            <Sparkles className="w-4 h-4 text-amber-400" />
-            AI Recommendations
-          </h3>
-          <div className="space-y-3">
+      {/* Agent Logs (Terminal) */}
+      <div className="flex-1 flex flex-col min-h-0 border-b border-slate-800 bg-[#050505]">
+        <div className="px-4 py-2 bg-slate-900/80 border-b border-slate-800 flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-400 flex items-center gap-2">
+                <Terminal className="w-3 h-3" /> AGENT SWARM LOGS
+            </span>
+            <div className="flex gap-1">
+                <div className="w-2 h-2 rounded-full bg-rose-500 animate-pulse"></div>
+                <div className="w-2 h-2 rounded-full bg-amber-500 animate-pulse delay-75"></div>
+                <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse delay-150"></div>
+            </div>
+        </div>
+        <div className="flex-1 overflow-y-auto p-4 space-y-2 font-mono text-xs">
+            {logs.map((log, idx) => (
+                <div key={idx} className="flex gap-2 opacity-90">
+                    <span className="text-slate-600">[{log.timestamp}]</span>
+                    <span className={`${
+                        log.agent === 'STRATEGIST' ? 'text-purple-400' :
+                        log.agent === 'EXECUTIONER' ? 'text-rose-400' :
+                        log.agent === 'AUDITOR' ? 'text-emerald-400' : 'text-blue-400'
+                    } font-bold`}>
+                        {log.agent}:
+                    </span>
+                    <span className={`${
+                        log.level === 'error' ? 'text-rose-500' :
+                        log.level === 'success' ? 'text-emerald-500' :
+                        log.level === 'warn' ? 'text-amber-500' : 'text-slate-300'
+                    }`}>
+                        {log.message}
+                    </span>
+                </div>
+            ))}
+            <div ref={logEndRef} />
+        </div>
+      </div>
+
+      {/* Actions Panel */}
+      <div className="h-1/3 overflow-y-auto bg-black p-4 border-t border-slate-800">
+         <h3 className="text-xs font-bold text-slate-500 mb-3 uppercase tracking-wider">Recommended Protocols</h3>
+         <div className="space-y-2">
             {actions.map((action) => (
-              <div 
-                key={action.id} 
-                className={`p-4 rounded-xl border transition-all ${
+              <button 
+                key={action.id}
+                onClick={() => onExecuteAction(action.id)}
+                disabled={isProcessing || action.status === 'completed'}
+                className={`w-full p-3 rounded border text-left transition-all group relative overflow-hidden ${
                     action.status === 'completed' 
-                    ? 'bg-emerald-500/10 border-emerald-500/30 opacity-75' 
-                    : 'bg-slate-800 border-slate-700 hover:border-cyan-500/50'
+                    ? 'bg-slate-900/50 border-slate-800 opacity-50' 
+                    : 'bg-slate-900 border-slate-800 hover:border-cyan-500 hover:shadow-[0_0_15px_rgba(6,182,212,0.2)]'
                 }`}
               >
-                <div className="flex justify-between items-start mb-2">
-                  <span className={`text-xs font-bold px-2 py-1 rounded uppercase ${
-                      action.impact === 'high' ? 'bg-rose-500/20 text-rose-300' : 
-                      action.impact === 'medium' ? 'bg-amber-500/20 text-amber-300' : 
-                      'bg-blue-500/20 text-blue-300'
-                  }`}>
-                    {action.impact} Impact
-                  </span>
-                  {action.status === 'completed' && <CheckCircle className="w-5 h-5 text-emerald-400" />}
+                <div className="flex justify-between items-start mb-1 relative z-10">
+                  <span className="text-xs font-bold text-cyan-300 uppercase">{action.type}</span>
+                  {action.status === 'completed' && <CheckCircle className="w-3 h-3 text-emerald-500" />}
                 </div>
-                
-                <h4 className="text-white font-medium mb-1">{action.title}</h4>
-                <p className="text-xs text-slate-400 mb-4 leading-relaxed">{action.description}</p>
-                
-                {action.status !== 'completed' && (
-                  <button 
-                    onClick={() => onExecuteAction(action.id)}
-                    disabled={isProcessing}
-                    className="w-full py-2 bg-cyan-600 hover:bg-cyan-500 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-                  >
-                    {isProcessing ? 'AI Processing...' : 'Auto-Fix'}
-                  </button>
-                )}
-              </div>
+                <h4 className="text-sm text-white font-medium mb-1 relative z-10">{action.title}</h4>
+                <p className="text-[10px] text-slate-400 relative z-10">{action.description}</p>
+              </button>
             ))}
-          </div>
-        </div>
+         </div>
       </div>
     </div>
   );
