@@ -1,15 +1,17 @@
-import React, { useState } from 'react';
+
+import React, { useState, useCallback } from 'react';
 import { UploadZone } from './components/UploadZone';
 import { AnalysisSidebar } from './components/AnalysisSidebar';
 import { DataGrid } from './components/DataGrid';
 import { ValidationModal } from './components/ValidationModal';
 import { ChatInterface } from './components/ChatInterface';
 import { EvolutionPanel } from './components/EvolutionPanel';
+import { Visualizer } from './components/Visualizer';
 import { AppState, CleaningAction, AgentLog, DataRow, EvolutionProposal } from './types';
 import { parseCSV, exportCSV } from './utils/csvHelper';
 import { validateDataset } from './utils/validation';
 import { analyzeDatasetWithGemini, cleanDataBatch, fixValidationErrors, nuclearClean, generateEvolutionProposals, generateAgentDebate } from './services/geminiService';
-import { Download, Zap, RotateCcw, Biohazard, TerminalSquare } from 'lucide-react';
+import { Download, Zap, RotateCcw, Biohazard, TerminalSquare, BarChart3 } from 'lucide-react';
 
 const App: React.FC = () => {
   const [state, setState] = useState<AppState>({
@@ -23,10 +25,13 @@ const App: React.FC = () => {
     isValidationModalOpen: false,
     isEvolutionPanelOpen: false,
     evolutionProposals: [],
-    nuclearMode: false
+    nuclearMode: false,
+    viewMode: 'cleaned'
   });
 
-  const [viewMode, setViewMode] = useState<'raw' | 'cleaned'>('cleaned');
+  const setViewMode = (mode: 'raw' | 'cleaned' | 'visualize') => {
+    setState(prev => ({ ...prev, viewMode: mode }));
+  };
 
   const addLog = (agent: AgentLog['agent'], message: string, level: AgentLog['level'] = 'info') => {
     setState(prev => ({
@@ -40,6 +45,27 @@ const App: React.FC = () => {
     }));
   };
 
+  // --- INLINE EDITING HANDLER ---
+  const handleCellEdit = useCallback((rowId: string, column: string, value: any) => {
+    setState(prev => {
+        const targetData = prev.viewMode === 'raw' ? prev.rawData : prev.cleanedData;
+        const updatedData = targetData.map(row => {
+            if (row.id === rowId) {
+                return { ...row, [column]: value };
+            }
+            return row;
+        });
+
+        // If we are editing raw view, we technically update rawData, but usually we want to edit cleanedData.
+        // For this app, we assume editing happens on the active view.
+        if (prev.viewMode === 'raw') {
+             return { ...prev, rawData: updatedData };
+        } else {
+             return { ...prev, cleanedData: updatedData };
+        }
+    });
+  }, []);
+
   const handleFileUpload = async (content: string, fileName: string) => {
     setState({
         stage: 'analyzing',
@@ -52,7 +78,8 @@ const App: React.FC = () => {
         isValidationModalOpen: false,
         isEvolutionPanelOpen: false,
         evolutionProposals: [],
-        nuclearMode: false
+        nuclearMode: false,
+        viewMode: 'raw'
     });
 
     addLog('SYSTEM', `MOUNTING VOLUME: ${fileName}...`);
@@ -233,12 +260,13 @@ const App: React.FC = () => {
         isValidationModalOpen: false,
         isEvolutionPanelOpen: false,
         evolutionProposals: [],
-        nuclearMode: false
+        nuclearMode: false,
+        viewMode: 'cleaned'
       });
   };
 
   const getActiveHeaders = () => {
-      const source = viewMode === 'raw' ? state.rawData : state.cleanedData;
+      const source = state.viewMode === 'raw' ? state.rawData : state.cleanedData;
       // IMPORTANT: Filter out the internal _flags property so it doesn't show as a column
       return source.length > 0 ? Object.keys(source[0]).filter(k => k !== 'id' && k !== '_flags') : [];
   };
@@ -272,10 +300,23 @@ const App: React.FC = () => {
             {state.stage === 'command_center' && (
                 <>
                 <div className="h-4 w-px bg-[#222]"></div>
-                {/* View Switcher */}
-                <div className="flex bg-[#111] rounded-sm p-1 border border-[#222]">
-                    <button onClick={() => setViewMode('raw')} className={`px-3 py-1 text-[10px] font-bold font-mono rounded-sm transition-all ${viewMode === 'raw' ? 'bg-[#222] text-white' : 'text-gray-600 hover:text-gray-400'}`}>RAW</button>
-                    <button onClick={() => setViewMode('cleaned')} className={`px-3 py-1 text-[10px] font-bold font-mono rounded-sm transition-all ${viewMode === 'cleaned' ? 'bg-[#0ce6f2]/10 text-[#0ce6f2] shadow-[0_0_10px_rgba(12,230,242,0.2)]' : 'text-gray-600 hover:text-gray-400'}`}>CLEAN</button>
+                
+                {/* Mode Switcher including Viz */}
+                <div className="flex bg-[#111] rounded-sm p-1 border border-[#222] items-center">
+                    <button onClick={() => setViewMode('raw')} className={`px-3 py-1 text-[10px] font-bold font-mono rounded-sm transition-all ${state.viewMode === 'raw' ? 'bg-[#222] text-white' : 'text-gray-600 hover:text-gray-400'}`}>RAW</button>
+                    <button onClick={() => setViewMode('cleaned')} className={`px-3 py-1 text-[10px] font-bold font-mono rounded-sm transition-all ${state.viewMode === 'cleaned' ? 'bg-[#0ce6f2]/10 text-[#0ce6f2] shadow-[0_0_10px_rgba(12,230,242,0.2)]' : 'text-gray-600 hover:text-gray-400'}`}>CLEAN</button>
+                    <div className="w-px h-3 bg-[#333] mx-1"></div>
+                    <button 
+                        onClick={() => setViewMode('visualize')} 
+                        className={`px-2 py-1 rounded-sm transition-all ${
+                            state.viewMode === 'visualize' 
+                            ? 'bg-[#b569ff]/20 text-[#b569ff] shadow-[0_0_10px_rgba(181,105,255,0.2)]' 
+                            : 'text-gray-600 hover:text-[#b569ff]'
+                        }`}
+                        title="Visualization Mode"
+                    >
+                        <BarChart3 className="w-3 h-3" />
+                    </button>
                 </div>
 
                 {/* MAKE IT BLEED CLEAN BUTTON */}
@@ -339,11 +380,20 @@ const App: React.FC = () => {
                 />
                 <div className="flex-1 flex flex-col bg-[#0a0a0a] overflow-hidden relative">
                    <div className="absolute top-0 left-0 right-0 h-px bg-[#0ce6f2] shadow-[0_0_20px_#0ce6f2] z-10"></div>
-                    <DataGrid 
-                        data={viewMode === 'raw' ? state.rawData : state.cleanedData} 
-                        rawData={viewMode === 'cleaned' ? state.rawData : undefined}
-                        columns={getActiveHeaders()} 
-                    />
+                    
+                    {state.viewMode === 'visualize' ? (
+                        <Visualizer 
+                            data={state.cleanedData}
+                            columns={getActiveHeaders()}
+                        />
+                    ) : (
+                        <DataGrid 
+                            data={state.viewMode === 'raw' ? state.rawData : state.cleanedData} 
+                            rawData={state.viewMode === 'cleaned' ? state.rawData : undefined}
+                            columns={getActiveHeaders()}
+                            onCellEdit={handleCellEdit}
+                        />
+                    )}
                     
                     {state.isProcessing && (
                         <div className="absolute inset-0 z-50 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center">

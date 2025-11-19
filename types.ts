@@ -1,3 +1,4 @@
+
 export type CellValue = string | number | boolean | null | undefined;
 
 export interface DataRow {
@@ -70,6 +71,16 @@ export interface EvolutionProposal {
   performanceImpact: string;
 }
 
+export type ChartType = 'bar' | 'line' | 'area' | 'pie' | 'scatter';
+
+export interface ChartConfig {
+  type: ChartType;
+  xAxis: string;
+  yAxis: string; // In a more complex app, this could be string[] for multi-line
+  aggregation: 'sum' | 'avg' | 'count' | 'none';
+  color: string;
+}
+
 export interface AppState {
   stage: 'idle' | 'analyzing' | 'command_center';
   rawData: DataRow[];
@@ -83,4 +94,5 @@ export interface AppState {
   isEvolutionPanelOpen: boolean;
   evolutionProposals: EvolutionProposal[];
   nuclearMode: boolean;
+  viewMode: 'raw' | 'cleaned' | 'visualize'; // Added 'visualize'
 }
